@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ArcGIS Location Assistant</title>
+    <link rel="icon" href="data:,">
     <!-- DOMPurify for XSS protection -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
     <style>
@@ -1097,9 +1098,12 @@
                 $connectBtn.disabled = true;
 
                 const tokenResp = await fetch(TOKEN_ENDPOINT);
+                if (!tokenResp.ok) {
+                    throw new Error(`Bot token endpoint returned ${tokenResp.status}. The Copilot Studio bot may be unpublished or the Direct Line channel is disabled.`);
+                }
                 const tokenData = await tokenResp.json();
 
-                if (!tokenData.token) throw new Error("No token received");
+                if (!tokenData.token) throw new Error("No token received from bot endpoint");
 
                 directLineToken = tokenData.token;
 
@@ -1588,6 +1592,7 @@
 
                     // Refresh the token first
                     const tokenResp = await fetch(TOKEN_ENDPOINT);
+                    if (!tokenResp.ok) throw new Error(`Token endpoint returned ${tokenResp.status}`);
                     const tokenData = await tokenResp.json();
                     if (!tokenData.token) throw new Error("Token refresh failed");
 
