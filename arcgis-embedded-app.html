@@ -587,7 +587,8 @@
     <!-- ArcGIS API -->
     <script src="https://js.arcgis.com/4.24/"></script>
 
-    <script type="module">
+    <script>
+    (async function() {
         // ============================================
         // Constants
         // ============================================
@@ -1631,6 +1632,7 @@
 
             document.getElementById("setup-box").appendChild(restoreBtn);
         }
+    })();
     </script>
 </body>
 </html>
