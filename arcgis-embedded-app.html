@@ -542,7 +542,7 @@
                         <span id="status-text">Connecting...</span>
                     </div>
                 </div>
-                <button id="reset-btn" class="hidden" onclick="window.resetConversation()">New Chat</button>
+                <button id="reset-btn" class="hidden">New Chat</button>
             </div>
 
             <div id="chat-messages">
@@ -584,11 +584,10 @@
         </div>
     </div>
 
-    <!-- ArcGIS API -->
-    <script src="https://js.arcgis.com/4.24/"></script>
+    <!-- ArcGIS API (4.32+ required for $arcgis.import) -->
+    <script type="module" src="https://js.arcgis.com/4.32/"></script>
 
-    <script>
-    (async function() {
+    <script type="module">
         // ============================================
         // Constants
         // ============================================
@@ -1222,6 +1221,7 @@
 
         $sendBtn.addEventListener("click", () => window.sendMessage());
         $connectBtn.addEventListener("click", () => window.connectBot());
+        $resetBtn.addEventListener("click", () => window.resetConversation());
 
         // ============================================
         // Chat Message Rendering (XSS-safe)
@@ -1632,7 +1632,6 @@
 
             document.getElementById("setup-box").appendChild(restoreBtn);
         }
-    })();
     </script>
 </body>
 </html>
