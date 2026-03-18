@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcGIS Location Assistant</title>
+    <!-- DOMPurify for XSS protection -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Inter", "Avenir Next", system-ui, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            background: #0a0a0a;
+        }
+
+        /* ---- Layout ---- */
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* ---- Chat Panel ---- */
+        #chat-panel {
+            width: 400px;
+            min-width: 380px;
+            display: flex;
+            flex-direction: column;
+            background: #111214;
+            color: #e0e0e0;
+            position: relative;
+            z-index: 2;
+        }
+
+        #chat-header {
+            padding: 20px 24px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        #chat-header .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 4px;
+        }
+
+        #chat-header .brand-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #0070d2, #00b4d8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: white;
+            font-size: 15px;
+            letter-spacing: -0.5px;
+            box-shadow: 0 2px 12px rgba(0,112,210,0.3);
+        }
+
+        #chat-header h1 {
+            font-size: 17px;
+            font-weight: 600;
+            color: #fff;
+            letter-spacing: -0.3px;
+        }
+
+        #chat-header .subtitle {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+            letter-spacing: 0.2px;
+        }
+
+        #reset-btn {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #888;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 11px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        #reset-btn:hover {
+            border-color: rgba(255,255,255,0.2);
+            color: #ccc;
+            background: rgba(255,255,255,0.04);
+        }
+
+        #reset-btn.hidden { display: none; }
+
+        .status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-dot.online {
+            background: #22c55e;
+            box-shadow: 0 0 6px rgba(34,197,94,0.5);
+        }
+
+        .status-dot.connecting {
+            background: #f59e0b;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-dot.error {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239,68,68,0.5);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ---- Messages ---- */
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            scrollbar-width: thin;
+            scrollbar-color: #333 transparent;
+        }
+
+        #chat-messages::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #chat-messages::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+
+        .msg {
+            max-width: 88%;
+            padding: 10px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            line-height: 1.55;
+            word-wrap: break-word;
+            animation: msgIn 0.25s ease-out;
+        }
+
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .msg-bot {
+            align-self: flex-start;
+            background: #1e2028;
+            color: #d0d0d0;
+            border-bottom-left-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .msg-bot b { color: #60a5fa; }
+        .msg-bot a { color: #60a5fa; text-decoration: none; }
+        .msg-bot a:hover { text-decoration: underline; }
+
+        .msg-user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, #0064c8, #0078e8);
+            color: white;
+            border-bottom-right-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,100,200,0.2);
+        }
+
+        .msg-system {
+            align-self: center;
+            color: #555;
+            font-size: 11px;
+            background: rgba(255,255,255,0.03);
+            padding: 6px 14px;
+            border-radius: 20px;
+        }
+
+        .msg-error {
+            align-self: center;
+            color: #ef4444;
+            font-size: 11px;
+            background: rgba(239,68,68,0.08);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid rgba(239,68,68,0.15);
+        }
+
+        /* ---- Suggested Actions ---- */
+        .suggested-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-self: flex-start;
+            max-width: 88%;
+            animation: msgIn 0.25s ease-out;
+        }
+
+        .suggested-action-btn {
+            background: rgba(0,100,200,0.08);
+            border: 1px solid rgba(0,100,200,0.2);
+            color: #60a5fa;
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .suggested-action-btn:hover {
+            background: rgba(0,100,200,0.15);
+            border-color: rgba(0,100,200,0.4);
+        }
+
+        /* ---- Chat Input ---- */
+        #chat-input-area {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background: #0d0e10;
+        }
+
+        #chat-input {
+            flex: 1;
+            padding: 11px 18px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 24px;
+            font-size: 13px;
+            outline: none;
+            font-family: inherit;
+            color: #e0e0e0;
+            background: #1a1b1f;
+            transition: all 0.2s;
+        }
+
+        #chat-input::placeholder { color: #555; }
+
+        #chat-input:focus {
+            border-color: rgba(0,112,210,0.5);
+            box-shadow: 0 0 0 3px rgba(0,112,210,0.1);
+            background: #1e1f24;
+        }
+
+        #chat-input:disabled { opacity: 0.4; }
+
+        #send-btn {
+            background: linear-gradient(135deg, #0064c8, #0078e8);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            min-width: 40px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(0,100,200,0.2);
+        }
+
+        #send-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 4px 16px rgba(0,100,200,0.3);
+        }
+
+        #send-btn:disabled { opacity: 0.3; cursor: default; }
+        #send-btn svg { width: 18px; height: 18px; fill: white; }
+
+        /* ---- Map Panel ---- */
+        #map-panel {
+            flex: 1;
+            position: relative;
+        }
+
+        #viewDiv { width: 100%; height: 100%; }
+
+        /* ---- Map click hint ---- */
+        #map-click-hint {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
+            color: #ccc;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        #map-click-hint.visible { opacity: 1; }
+
+        /* ---- Map Info Overlay ---- */
+        #map-info {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 10;
+            background: rgba(255,255,255,0.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 14px;
+            padding: 16px 18px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
+            max-width: 300px;
+            font-size: 13px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            border: 1px solid rgba(0,0,0,0.06);
+            transition: all 0.3s ease;
+            scrollbar-width: thin;
+            scrollbar-color: #ccc transparent;
+        }
+
+        #map-info::-webkit-scrollbar { width: 3px; }
+        #map-info::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+        #map-info h4 {
+            margin: 0 0 6px 0;
+            color: #1a1a2e;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+
+        #map-info p { margin: 2px 0; color: #444; }
+        #map-info b { color: #1a1a2e; }
+
+        #map-info hr {
+            border: none;
+            border-top: 1px solid rgba(0,0,0,0.06);
+            margin: 8px 0;
+        }
+
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        .dot-origin { background: #0064c8; }
+        .dot-dest { background: #e04006; }
+        .dot-place { background: #f59e0b; }
+
+        /* ---- Setup Overlay ---- */
+        #setup-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #setup-box {
+            background: #16171b;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.06);
+            text-align: center;
+        }
+
+        #setup-box .setup-icon {
+            width: 56px; height: 56px;
+            border-radius: 16px;
+            margin: 0 auto 20px;
+            background: linear-gradient(135deg, #0070d2, #00b4d8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: white;
+            font-size: 22px;
+            box-shadow: 0 4px 20px rgba(0,112,210,0.3);
+        }
+
+        #setup-box h2 {
+            color: #fff;
+            margin-bottom: 8px;
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        #setup-box p {
+            color: #888;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        #connect-btn {
+            background: linear-gradient(135deg, #0064c8, #0078e8);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 32px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            width: 100%;
+            letter-spacing: -0.2px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 16px rgba(0,100,200,0.3);
+            font-family: inherit;
+        }
+
+        #connect-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 24px rgba(0,100,200,0.4);
+        }
+
+        .hidden { display: none !important; }
+
+        /* ---- Typing indicator ---- */
+        .typing-indicator {
+            align-self: flex-start;
+            padding: 10px 14px;
+            border-radius: 16px;
+            border-bottom-left-radius: 4px;
+            background: #1e2028;
+            border: 1px solid rgba(255,255,255,0.04);
+            animation: msgIn 0.25s ease-out;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+            padding: 4px 0;
+        }
+
+        .typing-dots span {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #555;
+            animation: typingBounce 1.4s infinite;
+        }
+
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        /* ---- Mobile Responsive ---- */
+        @media (max-width: 768px) {
+            #app {
+                flex-direction: column;
+            }
+
+            #chat-panel {
+                width: 100%;
+                min-width: unset;
+                height: 55vh;
+                order: 2;
+            }
+
+            #map-panel {
+                height: 45vh;
+                order: 1;
+            }
+
+            #map-info {
+                top: 8px;
+                right: 8px;
+                max-width: 220px;
+                padding: 12px 14px;
+                font-size: 12px;
+                max-height: calc(45vh - 24px);
+            }
+
+            .msg { max-width: 92%; }
+
+            #chat-header h1 { font-size: 15px; }
+        }
+
+        @media (max-width: 480px) {
+            #chat-panel { height: 60vh; }
+            #map-panel { height: 40vh; }
+
+            #map-info {
+                max-width: 180px;
+                font-size: 11px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Chat Panel -->
+        <div id="chat-panel">
+            <div id="chat-header">
+                <div>
+                    <div class="brand">
+                        <div class="brand-icon">AI</div>
+                        <div>
+                            <h1>ArcGIS Location Assistant</h1>
+                        </div>
+                    </div>
+                    <div class="subtitle">
+                        <span id="status-dot" class="status-dot connecting"></span>
+                        <span id="status-text">Connecting...</span>
+                    </div>
+                </div>
+                <button id="reset-btn" class="hidden" onclick="window.resetConversation()">New Chat</button>
+            </div>
+
+            <div id="chat-messages">
+                <div class="msg msg-system">Start a conversation to see locations on the map.</div>
+            </div>
+
+            <div id="chat-input-area">
+                <input
+                    id="chat-input"
+                    type="text"
+                    placeholder="Ask me about locations..."
+                    disabled
+                />
+                <button id="send-btn" disabled>
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 12l18-9-18 9m0 0l18 9-18-9" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Map Panel -->
+        <div id="map-panel">
+            <div id="viewDiv"></div>
+            <div id="map-info">
+                <p style="color:#999">Map information will appear here.</p>
+            </div>
+            <div id="map-click-hint">Click the map to set a location</div>
+        </div>
+    </div>
+
+    <!-- Setup Overlay -->
+    <div id="setup-overlay">
+        <div id="setup-box">
+            <div class="setup-icon">AI</div>
+            <h2>ArcGIS Location Assistant</h2>
+            <p>Find places, get directions, and explore area demographics &mdash; powered by ArcGIS Location Services.</p>
+            <button id="connect-btn">Start Conversation</button>
+        </div>
+    </div>
+
+    <!-- ArcGIS API -->
+    <script src="https://js.arcgis.com/4.24/"></script>
+
+    <script type="module">
+        // ============================================
+        // Constants
+        // ============================================
+        const COLORS = {
+            ORIGIN: "#0064c8",
+            DESTINATION: "#e04006",
+            PLACE: "#f59e0b",
+            ROUTE: [0, 100, 200, 0.85],
+            CENSUS_OUTLINE: [100, 100, 100, 0.5],
+            RADIUS_OUTLINE: [0, 100, 200, 0.8]
+        };
+
+        const MARKER_SIZE = {
+            DEFAULT: 14,
+            LARGE: 18,
+            MEDIUM: 16
+        };
+
+        const ZOOM_LEVELS = {
+            LOCATION: 15,
+            DEFAULT: 4
+        };
+
+        const FIT_PADDING = {
+            DEFAULT: 0.008,
+            ROUTE: 0.005
+        };
+
+        const ANIMATION_DURATION = 800;
+        const TOKEN_REFRESH_INTERVAL = 20 * 60 * 1000; // 20 minutes (tokens expire ~30 min)
+        const CENSUS_POP_LABEL_THRESHOLD = 50;
+        const CENSUS_RADIUS_METERS = 1609.34; // 1 mile
+
+        // TODO: In production, proxy these through a backend to avoid exposing keys/endpoints
+        // e.g., const TOKEN_ENDPOINT = "/api/bot-token";
+        // e.g., const ARCGIS_API_KEY = fetched from backend session
+        const TOKEN_ENDPOINT = "https://ec021bd40c88e5f8988bc96afb7d4a.0b.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5e1_ArcGISLocationAssistantv4/directline/token?api-version=2022-03-01-preview";
+        const ARCGIS_API_KEY = "AAPTa_xJ2l7w1X2ynEd_O72GKkw..DtoYC9y8JFMciNGyEGhq8qSEHu0KpQHI0M4bcJslb1sAT-Q0_eD_rgBoCPYyaIDXUOL1eHjmai5ovYDKDeLhNni9tzBFW_xvFLfQewKcLLHVhkMuwLGqp5bjeXqyrJRIkxfGhzfw93GFdl6NEIJw-d-GJFG79jLT5I8mb9SLAlcjlgOt9qVwLbmLPb057-5kyIMdqE882uwCCyzx3ncbyVcPEY1DgbvJOsz2Df5THEame6C_4U9hVOo.AT1_XtcY7I2M";
+
+        const SESSION_KEYS = {
+            CONVERSATION_ID: "arcgis-assistant-convId",
+            WATERMARK: "arcgis-assistant-watermark",
+            TOKEN: "arcgis-assistant-token"
+        };
+
+        // ============================================
+        // ArcGIS Map Setup
+        // ============================================
+        const Map = await $arcgis.import("@arcgis/core/Map.js");
+        const MapView = await $arcgis.import("@arcgis/core/views/MapView.js");
+        const Graphic = await $arcgis.import("@arcgis/core/Graphic.js");
+        const GraphicsLayer = await $arcgis.import("@arcgis/core/layers/GraphicsLayer.js");
+        const Polyline = await $arcgis.import("@arcgis/core/geometry/Polyline.js");
+        const Point = await $arcgis.import("@arcgis/core/geometry/Point.js");
+        const Extent = await $arcgis.import("@arcgis/core/geometry/Extent.js");
+        const esriConfig = await $arcgis.import("@arcgis/core/config.js");
+
+        esriConfig.apiKey = ARCGIS_API_KEY;
+
+        const map = new Map({ basemap: "streets-navigation-vector" });
+
+        const view = new MapView({
+            container: "viewDiv",
+            map,
+            center: [-98.5, 39.8],
+            zoom: ZOOM_LEVELS.DEFAULT,
+            ui: { components: ["zoom", "compass"] }
+        });
+
+        const graphicsLayer = new GraphicsLayer();
+        map.add(graphicsLayer);
+
+        await view.when();
+
+        // ============================================
+        // DOM References
+        // ============================================
+        const $chatMessages = document.getElementById("chat-messages");
+        const $chatInput = document.getElementById("chat-input");
+        const $sendBtn = document.getElementById("send-btn");
+        const $statusDot = document.getElementById("status-dot");
+        const $statusText = document.getElementById("status-text");
+        const $setupOverlay = document.getElementById("setup-overlay");
+        const $connectBtn = document.getElementById("connect-btn");
+        const $resetBtn = document.getElementById("reset-btn");
+        const $mapInfo = document.getElementById("map-info");
+        const $mapClickHint = document.getElementById("map-click-hint");
+
+        // ============================================
+        // Map Helpers
+        // ============================================
+        function clearMap() {
+            graphicsLayer.removeAll();
+        }
+
+        function addMarker(lon, lat, color, label, size) {
+            const point = new Point({ longitude: lon, latitude: lat });
+
+            graphicsLayer.add(new Graphic({
+                geometry: point,
+                symbol: {
+                    type: "simple-marker",
+                    color,
+                    size: size || MARKER_SIZE.DEFAULT,
+                    outline: { color: "white", width: 2 }
+                }
+            }));
+
+            if (label) {
+                graphicsLayer.add(new Graphic({
+                    geometry: point,
+                    symbol: {
+                        type: "text",
+                        text: label,
+                        color,
+                        yoffset: -20,
+                        font: { size: 11, weight: "bold", family: "Inter" },
+                        haloColor: "white",
+                        haloSize: 2
+                    }
+                }));
+            }
+        }
+
+        async function zoomTo(lon, lat, level) {
+            await view.goTo(
+                { center: [lon, lat], zoom: level || ZOOM_LEVELS.LOCATION },
+                { duration: ANIMATION_DURATION }
+            );
+        }
+
+        async function fitExtent(points, pad) {
+            pad = pad || FIT_PADDING.DEFAULT;
+            const lons = points.map(p => p[0]);
+            const lats = points.map(p => p[1]);
+
+            const extent = new Extent({
+                xmin: Math.min(...lons) - pad,
+                ymin: Math.min(...lats) - pad,
+                xmax: Math.max(...lons) + pad,
+                ymax: Math.max(...lats) + pad,
+                spatialReference: { wkid: 4326 }
+            });
+
+            await view.goTo(extent, { duration: ANIMATION_DURATION });
+        }
+
+        async function drawRoute(fromLon, fromLat, toLon, toLat) {
+            const url = "https://route-api.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve";
+            const params = new URLSearchParams({
+                f: "json",
+                token: esriConfig.apiKey,
+                stops: `${fromLon},${fromLat};${toLon},${toLat}`,
+                returnDirections: "true",
+                returnRoutes: "true"
+            });
+
+            try {
+                const resp = await fetch(`${url}?${params}`);
+                const data = await resp.json();
+
+                if (data.routes?.features?.length > 0) {
+                    const paths = data.routes.features[0].geometry.paths;
+
+                    graphicsLayer.add(new Graphic({
+                        geometry: new Polyline({
+                            paths,
+                            spatialReference: { wkid: 4326 }
+                        }),
+                        symbol: {
+                            type: "simple-line",
+                            color: COLORS.ROUTE,
+                            width: 5,
+                            cap: "round",
+                            join: "round"
+                        }
+                    }));
+
+                    const allCoords = paths.flat();
+                    await fitExtent(allCoords, FIT_PADDING.ROUTE);
+
+                    return data.routes.features[0].attributes;
+                }
+            } catch (e) {
+                console.error("Route error:", e);
+            }
+
+            return null;
+        }
+
+        // ============================================
+        // Map Click Interaction
+        // ============================================
+        let mapClickEnabled = true;
+
+        // Show hint on hover
+        view.on("pointer-move", () => {
+            if (mapClickEnabled && directLineToken) {
+                $mapClickHint.classList.add("visible");
+            }
+        });
+
+        view.container.addEventListener("mouseleave", () => {
+            $mapClickHint.classList.remove("visible");
+        });
+
+        view.on("click", async (event) => {
+            if (!mapClickEnabled || !directLineToken) return;
+
+            const { longitude, latitude } = event.mapPoint;
+
+            // Reverse geocode to get address
+            try {
+                const geocodeUrl = "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode";
+                const params = new URLSearchParams({
+                    location: `${longitude},${latitude}`,
+                    f: "json",
+                    token: esriConfig.apiKey
+                });
+
+                const resp = await fetch(`${geocodeUrl}?${params}`);
+                const data = await resp.json();
+                const address = data.address?.LongLabel || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+                // Send location to bot
+                const locationText = `My location is ${address}`;
+                addChatMessage(locationText, "user");
+
+                await sendActivityToBot({
+                    type: "message",
+                    from: { id: "user1", name: "User" },
+                    text: locationText,
+                    textFormat: "plain",
+                    locale: "en-US",
+                    channelData: {
+                        mapClick: true,
+                        longitude,
+                        latitude,
+                        address
+                    }
+                });
+            } catch (e) {
+                console.error("Reverse geocode error:", e);
+                addChatMessage("Could not determine address for that location.", "error");
+            }
+        });
+
+        // ============================================
+        // Direct Line Bot Connection
+        // ============================================
+        let directLineToken = null;
+        let conversationId = null;
+        let watermark = null;
+        let webSocket = null;
+        let tokenRefreshTimer = null;
+        let currentOrigin = null;
+        let currentPlaces = [];
+        let currentDest = null;
+        let awaitingResponse = false;
+
+        function setStatus(state, text) {
+            $statusDot.className = `status-dot ${state}`;
+            $statusText.textContent = text;
+        }
+
+        function setInputEnabled(enabled) {
+            $chatInput.disabled = !enabled;
+            $sendBtn.disabled = !enabled;
+            if (enabled) $chatInput.focus();
+        }
+
+        function setAwaitingResponse(waiting) {
+            awaitingResponse = waiting;
+            setInputEnabled(!waiting);
+
+            if (waiting) {
+                showTypingIndicator();
+            } else {
+                hideTypingIndicator();
+            }
+        }
+
+        // ---- Typing Indicator ----
+        let typingEl = null;
+
+        function showTypingIndicator() {
+            if (typingEl) return;
+            typingEl = document.createElement("div");
+            typingEl.className = "typing-indicator";
+            typingEl.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+            $chatMessages.appendChild(typingEl);
+            $chatMessages.scrollTop = $chatMessages.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            if (typingEl) {
+                typingEl.remove();
+                typingEl = null;
+            }
+        }
+
+        // ---- Token Refresh ----
+        async function refreshToken() {
+            try {
+                const resp = await fetch(TOKEN_ENDPOINT);
+                const data = await resp.json();
+                if (data.token) {
+                    directLineToken = data.token;
+                    sessionStorage.setItem(SESSION_KEYS.TOKEN, directLineToken);
+                }
+            } catch (e) {
+                console.error("Token refresh failed:", e);
+            }
+        }
+
+        function startTokenRefresh() {
+            stopTokenRefresh();
+            tokenRefreshTimer = setInterval(refreshToken, TOKEN_REFRESH_INTERVAL);
+        }
+
+        function stopTokenRefresh() {
+            if (tokenRefreshTimer) {
+                clearInterval(tokenRefreshTimer);
+                tokenRefreshTimer = null;
+            }
+        }
+
+        // ---- Send Activity Helper ----
+        async function sendActivityToBot(activity) {
+            try {
+                await fetch(
+                    `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities`,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${directLineToken}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(activity)
+                    }
+                );
+            } catch (e) {
+                console.error("Send activity error:", e);
+                addChatMessage("Failed to send message. Please try again.", "error");
+                setAwaitingResponse(false);
+            }
+        }
+
+        // ---- WebSocket Connection ----
+        function connectWebSocket(streamUrl) {
+            if (webSocket) {
+                webSocket.close();
+            }
+
+            webSocket = new WebSocket(streamUrl);
+
+            webSocket.onopen = () => {
+                console.log("WebSocket connected");
+            };
+
+            webSocket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.activities) {
+                        const botMessages = data.activities.filter(
+                            a => a.type === "message" && a.from && a.from.id !== "user1"
+                        );
+
+                        for (const msg of botMessages) {
+                            setAwaitingResponse(false);
+
+                            if (msg.text) {
+                                addChatMessage(msg.text, "bot");
+                                parseAndUpdateMap(msg.text);
+                            }
+
+                            // Handle suggested actions
+                            if (msg.suggestedActions?.actions?.length > 0) {
+                                renderSuggestedActions(msg.suggestedActions.actions);
+                            }
+                        }
+                    }
+
+                    if (data.watermark) {
+                        watermark = data.watermark;
+                        sessionStorage.setItem(SESSION_KEYS.WATERMARK, watermark);
+                    }
+                } catch (e) {
+                    console.error("WebSocket message parse error:", e);
+                }
+            };
+
+            webSocket.onerror = (e) => {
+                console.error("WebSocket error:", e);
+                setStatus("error", "Connection error");
+                // Fall back to polling
+                startPolling();
+            };
+
+            webSocket.onclose = () => {
+                console.log("WebSocket closed");
+                // Reconnect if we still have a valid conversation
+                if (conversationId && directLineToken) {
+                    setTimeout(() => {
+                        reconnectWebSocket();
+                    }, 2000);
+                }
+            };
+        }
+
+        async function reconnectWebSocket() {
+            try {
+                const resp = await fetch(
+                    `https://directline.botframework.com/v3/directline/conversations/${conversationId}`,
+                    {
+                        method: "GET",
+                        headers: { "Authorization": `Bearer ${directLineToken}` }
+                    }
+                );
+                const data = await resp.json();
+                if (data.streamUrl) {
+                    connectWebSocket(data.streamUrl);
+                    setStatus("online", "Online");
+                }
+            } catch (e) {
+                console.error("WebSocket reconnect failed:", e);
+                startPolling();
+            }
+        }
+
+        // ---- Fallback Polling ----
+        let pollTimer = null;
+
+        function startPolling() {
+            stopPolling();
+            pollTimer = setInterval(pollMessages, 1500);
+        }
+
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        async function pollMessages() {
+            if (!directLineToken || !conversationId) return;
+
+            try {
+                const url = `https://directline.botframework.com/v3/directline/conversations/${conversationId}/activities${watermark ? '?watermark=' + watermark : ''}`;
+                const resp = await fetch(url, {
+                    headers: { "Authorization": `Bearer ${directLineToken}` }
+                });
+                const data = await resp.json();
+                watermark = data.watermark;
+                sessionStorage.setItem(SESSION_KEYS.WATERMARK, watermark);
+
+                const botMessages = (data.activities || []).filter(
+                    a => a.type === "message" && a.from && a.from.id !== "user1"
+                );
+
+                for (const msg of botMessages) {
+                    setAwaitingResponse(false);
+
+                    if (msg.text) {
+                        addChatMessage(msg.text, "bot");
+                        parseAndUpdateMap(msg.text);
+                    }
+
+                    if (msg.suggestedActions?.actions?.length > 0) {
+                        renderSuggestedActions(msg.suggestedActions.actions);
+                    }
+                }
+            } catch (e) {
+                console.error("Poll error:", e);
+            }
+        }
+
+        // ---- Suggested Actions ----
+        function renderSuggestedActions(actions) {
+            const container = document.createElement("div");
+            container.className = "suggested-actions";
+
+            actions.forEach(action => {
+                const btn = document.createElement("button");
+                btn.className = "suggested-action-btn";
+                btn.textContent = action.title || action.value;
+                btn.addEventListener("click", () => {
+                    // Remove all suggested action containers
+                    document.querySelectorAll(".suggested-actions").forEach(el => el.remove());
+                    // Send the action value as a message
+                    $chatInput.value = action.value || action.title;
+                    window.sendMessage();
+                });
+                container.appendChild(btn);
+            });
+
+            $chatMessages.appendChild(container);
+            $chatMessages.scrollTop = $chatMessages.scrollHeight;
+        }
+
+        // ---- Connect ----
+        window.connectBot = async function() {
+            try {
+                $connectBtn.textContent = "Connecting...";
+                $connectBtn.disabled = true;
+
+                const tokenResp = await fetch(TOKEN_ENDPOINT);
+                const tokenData = await tokenResp.json();
+
+                if (!tokenData.token) throw new Error("No token received");
+
+                directLineToken = tokenData.token;
+
+                const convResp = await fetch(
+                    "https://directline.botframework.com/v3/directline/conversations",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${directLineToken}`,
+                            "Content-Type": "application/json"
+                        }
+                    }
+                );
+
+                const convData = await convResp.json();
+                conversationId = convData.conversationId;
+
+                // Save session
+                sessionStorage.setItem(SESSION_KEYS.CONVERSATION_ID, conversationId);
+                sessionStorage.setItem(SESSION_KEYS.TOKEN, directLineToken);
+
+                // Connect via WebSocket if available, otherwise poll
+                if (convData.streamUrl) {
+                    connectWebSocket(convData.streamUrl);
+                } else {
+                    startPolling();
+                }
+
+                // Start token refresh
+                startTokenRefresh();
+
+                // Update UI
+                $setupOverlay.classList.add("hidden");
+                setInputEnabled(true);
+                setStatus("online", "Online");
+                $resetBtn.classList.remove("hidden");
+
+                // Send start event
+                await sendActivityToBot({
+                    type: "event",
+                    from: { id: "user1" },
+                    name: "startConversation"
+                });
+
+                addChatMessage("Connected! Ask me about any location, directions, or area demographics.", "system");
+
+            } catch (e) {
+                console.error("Connection error:", e);
+                $connectBtn.textContent = "Retry";
+                $connectBtn.disabled = false;
+                setStatus("error", "Disconnected");
+                addChatMessage(`Connection failed: ${e.message}`, "error");
+            }
+        };
+
+        // ---- Send Message ----
+        window.sendMessage = async function() {
+            const text = $chatInput.value.trim();
+            if (!text || !directLineToken || awaitingResponse) return;
+
+            $chatInput.value = "";
+
+            // Remove any existing suggested actions
+            document.querySelectorAll(".suggested-actions").forEach(el => el.remove());
+
+            addChatMessage(text, "user");
+            setAwaitingResponse(true);
+
+            await sendActivityToBot({
+                type: "message",
+                from: { id: "user1", name: "User" },
+                text,
+                textFormat: "plain",
+                locale: "en-US"
+            });
+        };
+
+        // ---- Reset Conversation ----
+        window.resetConversation = function() {
+            // Cleanup connections
+            if (webSocket) { webSocket.close(); webSocket = null; }
+            stopPolling();
+            stopTokenRefresh();
+
+            // Clear state
+            directLineToken = null;
+            conversationId = null;
+            watermark = null;
+            currentOrigin = null;
+            currentPlaces = [];
+            currentDest = null;
+            awaitingResponse = false;
+
+            sessionStorage.removeItem(SESSION_KEYS.CONVERSATION_ID);
+            sessionStorage.removeItem(SESSION_KEYS.WATERMARK);
+            sessionStorage.removeItem(SESSION_KEYS.TOKEN);
+
+            // Reset UI
+            clearMap();
+            $chatMessages.innerHTML = '<div class="msg msg-system">Start a conversation to see locations on the map.</div>';
+            $mapInfo.innerHTML = '<p style="color:#999">Map information will appear here.</p>';
+            setInputEnabled(false);
+            setStatus("connecting", "Connecting...");
+            $resetBtn.classList.add("hidden");
+            hideTypingIndicator();
+
+            // Reset map view
+            view.goTo({ center: [-98.5, 39.8], zoom: ZOOM_LEVELS.DEFAULT }, { duration: ANIMATION_DURATION });
+
+            // Show setup overlay
+            $setupOverlay.classList.remove("hidden");
+            $connectBtn.textContent = "Start Conversation";
+            $connectBtn.disabled = false;
+        };
+
+        // ---- Event Listeners ----
+        $chatInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") window.sendMessage();
+        });
+
+        $sendBtn.addEventListener("click", () => window.sendMessage());
+        $connectBtn.addEventListener("click", () => window.connectBot());
+
+        // ============================================
+        // Chat Message Rendering (XSS-safe)
+        // ============================================
+        function addChatMessage(text, type) {
+            const div = document.createElement("div");
+            div.className = `msg msg-${type}`;
+
+            if (type === "user") {
+                // User messages: plain text only, no HTML
+                div.textContent = text;
+            } else {
+                // Bot/system messages: sanitize with DOMPurify
+                let html = text
+                    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+                    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+                    .replace(/\n/g, "<br>");
+
+                div.innerHTML = DOMPurify.sanitize(html, {
+                    ALLOWED_TAGS: ["b", "i", "em", "strong", "a", "br"],
+                    ALLOWED_ATTR: ["href", "target", "rel"]
+                });
+            }
+
+            $chatMessages.appendChild(div);
+            $chatMessages.scrollTop = $chatMessages.scrollHeight;
+        }
+
+        // ============================================
+        // Parse bot messages and update map
+        // ============================================
+        function getUrlParam(url, key) {
+            try { return new URL(url).searchParams.get(key); }
+            catch { return null; }
+        }
+
+        function formatCurrency(v) {
+            const n = parseFloat(v);
+            return isNaN(n) ? v : "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+        }
+
+        function formatNumber(v) {
+            const n = parseFloat(v);
+            return isNaN(n) ? v : n.toLocaleString("en-US");
+        }
+
+        async function parseAndUpdateMap(text) {
+            const urlMatches = [...text.matchAll(/https:\/\/fabricesri\.z13\.web\.core\.windows\.net\/arcgis-map-viewer\.html\?[^\s)]+/g)];
+            const mapUrl = urlMatches.length > 0 ? urlMatches[0][0] : null;
+            const mapType = mapUrl ? getUrlParam(mapUrl, "type") : null;
+
+            // ---- GEOCODE ----
+            if (mapType === "geocode") {
+                const lon = parseFloat(getUrlParam(mapUrl, "lon"));
+                const lat = parseFloat(getUrlParam(mapUrl, "lat"));
+                const address = decodeURIComponent(getUrlParam(mapUrl, "address") || "Your Location");
+
+                currentOrigin = { lon, lat, address };
+
+                clearMap();
+                addMarker(lon, lat, COLORS.ORIGIN, "", MARKER_SIZE.LARGE);
+                await zoomTo(lon, lat, ZOOM_LEVELS.LOCATION);
+
+                $mapInfo.innerHTML = `<h4>Your Location</h4>
+                    <p><span class="dot dot-origin"></span><b>${DOMPurify.sanitize(address)}</b></p>
+                    <p style="font-size:11px;color:#999;margin-top:4px">${lon.toFixed(6)}, ${lat.toFixed(6)}</p>`;
+
+                return;
+            }
+
+            // ---- PLACES ----
+            if (mapType === "places" && currentOrigin) {
+                clearMap();
+                addMarker(currentOrigin.lon, currentOrigin.lat, COLORS.ORIGIN, "You", MARKER_SIZE.MEDIUM);
+
+                const allPoints = [[currentOrigin.lon, currentOrigin.lat]];
+                currentPlaces = [];
+
+                try {
+                    const placesJson = getUrlParam(mapUrl, "places");
+                    if (placesJson) {
+                        const places = JSON.parse(placesJson);
+
+                        places.forEach((p, i) => {
+                            if (p.name && p.name !== "N/A" && p.lon && p.lat) {
+                                currentPlaces.push({
+                                    num: i + 1,
+                                    name: p.name,
+                                    lon: p.lon,
+                                    lat: p.lat,
+                                    dist: p.dist
+                                });
+                                addMarker(p.lon, p.lat, COLORS.PLACE, String(i + 1), MARKER_SIZE.DEFAULT);
+                                allPoints.push([p.lon, p.lat]);
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error("Places JSON parse error:", e);
+                }
+
+                if (allPoints.length > 1) await fitExtent(allPoints, FIT_PADDING.DEFAULT);
+
+                // Build full HTML string before assigning (avoids repeated DOM re-parse)
+                let infoHtml = `<h4>Nearby Places</h4>
+                    <p><span class="dot dot-origin"></span><b>You:</b> ${DOMPurify.sanitize(currentOrigin.address)}</p><hr>`;
+
+                currentPlaces.forEach(p => {
+                    infoHtml += `<p><span class="dot dot-place"></span>${p.num}. <b>${DOMPurify.sanitize(p.name)}</b>${p.dist ? ` &mdash; ${Math.round(p.dist)}m` : ""}</p>`;
+                });
+
+                $mapInfo.innerHTML = infoHtml;
+                return;
+            }
+
+            // ---- ROUTE ----
+            if (mapType === "route" && currentOrigin) {
+                const fromLon = parseFloat(getUrlParam(mapUrl, "fromLon"));
+                const fromLat = parseFloat(getUrlParam(mapUrl, "fromLat"));
+                const toLon = parseFloat(getUrlParam(mapUrl, "toLon"));
+                const toLat = parseFloat(getUrlParam(mapUrl, "toLat"));
+                const fromName = decodeURIComponent(getUrlParam(mapUrl, "from") || currentOrigin.address);
+                const toName = decodeURIComponent(getUrlParam(mapUrl, "to") || "Destination");
+                const time = getUrlParam(mapUrl, "time") || "";
+                const dist = getUrlParam(mapUrl, "dist") || "";
+
+                currentDest = { lon: toLon, lat: toLat, name: toName };
+
+                clearMap();
+                addMarker(fromLon, fromLat, COLORS.ORIGIN, "A", MARKER_SIZE.LARGE);
+                addMarker(toLon, toLat, COLORS.DESTINATION, "B", MARKER_SIZE.LARGE);
+                await fitExtent([[fromLon, fromLat], [toLon, toLat]], FIT_PADDING.ROUTE);
+
+                $mapInfo.innerHTML = `<h4>Driving Directions</h4>
+                    <p><span class="dot dot-origin"></span><b>From:</b> ${DOMPurify.sanitize(fromName)}</p>
+                    <p><span class="dot dot-dest"></span><b>To:</b> ${DOMPurify.sanitize(toName)}</p><hr>
+                    <p style="color:#999">Calculating route...</p>`;
+
+                const attrs = await drawRoute(fromLon, fromLat, toLon, toLat);
+
+                $mapInfo.innerHTML = `<h4>Driving Directions</h4>
+                    <p><span class="dot dot-origin"></span><b>From:</b> ${DOMPurify.sanitize(fromName)}</p>
+                    <p><span class="dot dot-dest"></span><b>To:</b> ${DOMPurify.sanitize(toName)}</p><hr>
+                    <p><b>Drive Time:</b> ${attrs ? attrs.Total_TravelTime.toFixed(1) : time} min</p>
+                    <p><b>Distance:</b> ${attrs ? attrs.Total_Miles.toFixed(1) : dist} miles</p>`;
+
+                return;
+            }
+
+            // ---- GEOENRICH + Census Blocks ----
+            if (mapType === "geoenrich") {
+                const lon = parseFloat(getUrlParam(mapUrl, "lon"));
+                const lat = parseFloat(getUrlParam(mapUrl, "lat"));
+                const name = decodeURIComponent(getUrlParam(mapUrl, "name") || "Location");
+
+                const Circle = await $arcgis.import("@arcgis/core/geometry/Circle.js");
+                const Polygon = await $arcgis.import("@arcgis/core/geometry/Polygon.js");
+
+                clearMap();
+
+                const circle = new Circle({
+                    center: new Point({ longitude: lon, latitude: lat }),
+                    radius: CENSUS_RADIUS_METERS,
+                    radiusUnit: "meters",
+                    geodesic: true
+                });
+
+                graphicsLayer.add(new Graphic({
+                    geometry: circle,
+                    symbol: {
+                        type: "simple-fill",
+                        color: [0, 0, 0, 0],
+                        outline: { color: COLORS.RADIUS_OUTLINE, width: 2.5, style: "dash" }
+                    }
+                }));
+
+                addMarker(lon, lat, COLORS.ORIGIN, "", MARKER_SIZE.MEDIUM);
+                await view.goTo(circle.extent.expand(1.2), { duration: ANIMATION_DURATION });
+
+                const pop = getUrlParam(mapUrl, "pop") || "\u2014";
+                const hh = getUrlParam(mapUrl, "hh") || "\u2014";
+                const hhsize = getUrlParam(mapUrl, "hhsize") || "\u2014";
+                const medinc = getUrlParam(mapUrl, "medinc") || "\u2014";
+                const avginc = getUrlParam(mapUrl, "avginc") || "\u2014";
+                const pci = getUrlParam(mapUrl, "pci") || "\u2014";
+                const medval = getUrlParam(mapUrl, "medval") || "\u2014";
+                const avgval = getUrlParam(mapUrl, "avgval") || "\u2014";
+                const owner = getUrlParam(mapUrl, "owner") || "\u2014";
+                const renter = getUrlParam(mapUrl, "renter") || "\u2014";
+                const hu = getUrlParam(mapUrl, "hu") || "\u2014";
+                const divIdx = getUrlParam(mapUrl, "div") || "\u2014";
+                const growth = getUrlParam(mapUrl, "growth") || "\u2014";
+                const daypop = getUrlParam(mapUrl, "daypop") || "\u2014";
+
+                const safeName = DOMPurify.sanitize(name);
+
+                $mapInfo.innerHTML = `<h4>Area Demographics</h4>
+                    <p><span class="dot dot-origin"></span><b>${safeName}</b> <span style="font-size:11px;color:#999">(1-mile radius)</span></p><hr>
+                    <p style="font-size:12px"><b>Population:</b> ${formatNumber(pop)} | <b>Daytime:</b> ${formatNumber(daypop)}</p>
+                    <p style="font-size:12px"><b>Households:</b> ${formatNumber(hh)} | <b>Avg Size:</b> ${hhsize}</p>
+                    <p style="font-size:12px"><b>Diversity:</b> ${divIdx} | <b>Growth:</b> ${growth}%</p><hr>
+                    <p style="font-size:12px"><b>Median Income:</b> ${formatCurrency(medinc)}</p>
+                    <p style="font-size:12px"><b>Avg Income:</b> ${formatCurrency(avginc)} | <b>Per Capita:</b> ${formatCurrency(pci)}</p><hr>
+                    <p style="font-size:12px"><b>Housing:</b> ${formatNumber(hu)} | <b>Own:</b> ${formatNumber(owner)} | <b>Rent:</b> ${formatNumber(renter)}</p>
+                    <p style="font-size:12px"><b>Median Value:</b> ${formatCurrency(medval)} | <b>Avg:</b> ${formatCurrency(avgval)}</p>
+                    <p style="font-size:11px;color:#999;margin-top:6px">Loading census blocks...</p>`;
+
+                try {
+                    const blockUrl = "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Census_2020_DHC_Blocks/FeatureServer/1/query";
+
+                    const blockParams = new URLSearchParams({
+                        where: "P0010001 > 0",
+                        geometry: JSON.stringify({ x: lon, y: lat, spatialReference: { wkid: 4326 } }),
+                        geometryType: "esriGeometryPoint",
+                        spatialRel: "esriSpatialRelIntersects",
+                        distance: "1",
+                        units: "esriSRUnit_StatuteMile",
+                        outFields: "GEOID,P0010001,H0010001,H0030002",
+                        returnGeometry: "true",
+                        outSR: "4326",
+                        f: "json",
+                        inSR: "4326"
+                    });
+
+                    const blockResp = await fetch(`${blockUrl}?${blockParams}`);
+                    const blockData = await blockResp.json();
+
+                    if (blockData.features && blockData.features.length > 0) {
+                        const populations = blockData.features.map(f => f.attributes.P0010001).filter(p => p > 0);
+                        const minPop = Math.min(...populations);
+                        const maxPop = Math.max(...populations);
+                        const range = maxPop - minPop || 1;
+
+                        function getColor(bpop) {
+                            if (bpop === 0) return [220, 220, 220, 0.3];
+                            const t = (bpop - minPop) / range;
+                            return [
+                                Math.round(255 - t * 255),
+                                Math.round(255 - t * 178),
+                                Math.round(204 + t * (168 - 204)),
+                                0.6
+                            ];
+                        }
+
+                        blockData.features.sort((a, b) => a.attributes.P0010001 - b.attributes.P0010001);
+
+                        let totalBlockPop = 0;
+                        let blockCount = 0;
+
+                        blockData.features.forEach(f => {
+                            const bpop = f.attributes.P0010001;
+                            totalBlockPop += bpop;
+                            blockCount++;
+
+                            graphicsLayer.add(new Graphic({
+                                geometry: new Polygon({
+                                    rings: f.geometry.rings,
+                                    spatialReference: { wkid: 4326 }
+                                }),
+                                symbol: {
+                                    type: "simple-fill",
+                                    color: getColor(bpop),
+                                    outline: { color: COLORS.CENSUS_OUTLINE, width: 0.5 }
+                                },
+                                popupTemplate: {
+                                    title: "Census Block",
+                                    content: `<b>Block:</b> ${f.attributes.GEOID}<br><b>Population:</b> ${bpop.toLocaleString()}<br><b>Housing Units:</b> ${f.attributes.H0010001.toLocaleString()}<br><b>Households:</b> ${f.attributes.H0030002.toLocaleString()}`
+                                }
+                            }));
+
+                            if (bpop >= CENSUS_POP_LABEL_THRESHOLD) {
+                                const ring = f.geometry.rings[0];
+                                const cx = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+                                const cy = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+
+                                graphicsLayer.add(new Graphic({
+                                    geometry: new Point({ longitude: cx, latitude: cy }),
+                                    symbol: {
+                                        type: "text",
+                                        text: bpop.toLocaleString(),
+                                        color: "#222",
+                                        font: { size: 9, weight: "bold", family: "Inter" },
+                                        haloColor: "white",
+                                        haloSize: 1.5
+                                    }
+                                }));
+                            }
+                        });
+
+                        // Re-add circle overlay on top
+                        graphicsLayer.add(new Graphic({
+                            geometry: circle,
+                            symbol: {
+                                type: "simple-fill",
+                                color: [0, 0, 0, 0],
+                                outline: { color: COLORS.RADIUS_OUTLINE, width: 2.5, style: "dash" }
+                            }
+                        }));
+
+                        addMarker(lon, lat, COLORS.ORIGIN, "", MARKER_SIZE.MEDIUM);
+
+                        const lastP = $mapInfo.querySelector("p:last-child");
+                        if (lastP) {
+                            lastP.outerHTML = `<hr>
+                                <p style="font-size:12px"><b>Census Blocks:</b> ${blockCount} blocks</p>
+                                <p style="font-size:12px"><b>Block Pop Total:</b> ${totalBlockPop.toLocaleString()}</p>
+                                <div style="display:flex;align-items:center;margin:6px 0">
+                                    <div style="width:100%;height:10px;border-radius:5px;background:linear-gradient(to right,rgba(255,255,204,0.8),rgba(0,100,200,0.8));border:1px solid rgba(0,0,0,0.1)"></div>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;font-size:10px;color:#999">
+                                    <span>${minPop}</span><span>Pop per Block</span><span>${maxPop.toLocaleString()}</span>
+                                </div>
+                                <p style="font-size:10px;color:#999;margin-top:2px">Click blocks for details</p>`;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Census block query failed:", e);
+                    const lastP = $mapInfo.querySelector("p:last-child");
+                    if (lastP) lastP.textContent = "Census block data unavailable";
+                }
+
+                return;
+            }
+        }
+
+        // ============================================
+        // Session Restore (optional reconnect)
+        // ============================================
+        // Note: We do NOT auto-connect. The user must click "Start Conversation".
+        // However, if they had a session, we could offer to restore it.
+        const savedConvId = sessionStorage.getItem(SESSION_KEYS.CONVERSATION_ID);
+        const savedToken = sessionStorage.getItem(SESSION_KEYS.TOKEN);
+
+        if (savedConvId && savedToken) {
+            // Show a restore option in the setup overlay
+            const restoreBtn = document.createElement("button");
+            restoreBtn.textContent = "Resume Previous Session";
+            restoreBtn.style.cssText = `
+                background: transparent;
+                color: #60a5fa;
+                border: 1px solid rgba(96,165,250,0.3);
+                border-radius: 12px;
+                padding: 12px 32px;
+                font-size: 14px;
+                cursor: pointer;
+                width: 100%;
+                margin-top: 12px;
+                font-family: inherit;
+                transition: all 0.2s;
+            `;
+            restoreBtn.addEventListener("mouseenter", () => {
+                restoreBtn.style.borderColor = "rgba(96,165,250,0.6)";
+                restoreBtn.style.background = "rgba(96,165,250,0.05)";
+            });
+            restoreBtn.addEventListener("mouseleave", () => {
+                restoreBtn.style.borderColor = "rgba(96,165,250,0.3)";
+                restoreBtn.style.background = "transparent";
+            });
+            restoreBtn.addEventListener("click", async () => {
+                try {
+                    restoreBtn.textContent = "Resuming...";
+                    restoreBtn.disabled = true;
+
+                    // Refresh the token first
+                    const tokenResp = await fetch(TOKEN_ENDPOINT);
+                    const tokenData = await tokenResp.json();
+                    if (!tokenData.token) throw new Error("Token refresh failed");
+
+                    directLineToken = tokenData.token;
+                    conversationId = savedConvId;
+                    watermark = sessionStorage.getItem(SESSION_KEYS.WATERMARK);
+
+                    sessionStorage.setItem(SESSION_KEYS.TOKEN, directLineToken);
+
+                    // Try to get a new streamUrl
+                    const convResp = await fetch(
+                        `https://directline.botframework.com/v3/directline/conversations/${conversationId}`,
+                        {
+                            method: "GET",
+                            headers: { "Authorization": `Bearer ${directLineToken}` }
+                        }
+                    );
+                    const convData = await convResp.json();
+
+                    if (convData.streamUrl) {
+                        connectWebSocket(convData.streamUrl);
+                    } else {
+                        startPolling();
+                    }
+
+                    startTokenRefresh();
+
+                    $setupOverlay.classList.add("hidden");
+                    setInputEnabled(true);
+                    setStatus("online", "Online");
+                    $resetBtn.classList.remove("hidden");
+                    addChatMessage("Session restored. Continue your conversation.", "system");
+
+                } catch (e) {
+                    console.error("Session restore failed:", e);
+                    sessionStorage.removeItem(SESSION_KEYS.CONVERSATION_ID);
+                    sessionStorage.removeItem(SESSION_KEYS.WATERMARK);
+                    sessionStorage.removeItem(SESSION_KEYS.TOKEN);
+                    restoreBtn.remove();
+                    addChatMessage("Could not restore session. Please start a new conversation.", "error");
+                }
+            });
+
+            document.getElementById("setup-box").appendChild(restoreBtn);
+        }
+    </script>
+</body>
+</html>
